@@ -2,102 +2,96 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>MediaPipe Tracker – Fixed Mirroring & Minimizable Controls</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <title>MediaPipe Tracker – iPhone 16 Pro</title>
   <style>
     :root {
       --bg: #0f0f1a;
-      --panel: rgba(30, 30, 50, 0.7);
+      --panel: rgba(30, 30, 50, 0.75);
       --accent: #00d4ff;
       --text: #f0f4ff;
-      --glow: rgba(0, 212, 255, 0.35);
+      --island-height: env(safe-area-inset-top, 59px);
+      --bottom-inset: env(safe-area-inset-bottom, 34px);
     }
-    body {
-      margin:0; padding:0; background:var(--bg); color:var(--text);
-      font-family:system-ui, -apple-system, sans-serif;
-      overflow:hidden; touch-action:manipulation;
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      height:100%; overflow:hidden; background:var(--bg); color:var(--text);
+      font-family:system-ui, -apple-system, sans-serif; touch-action:manipulation;
     }
     #video, #canvas {
-      position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+      position:fixed; inset:0; width:100%; height:100%; object-fit:cover;
     }
     #canvas { pointer-events:none; }
 
     #hud {
-      position:absolute; top:12px; left:12px; z-index:90;
+      position:fixed; top:calc(var(--island-height) + 12px); left:12px; z-index:90;
       pointer-events:none;
     }
     .hud-card {
-      background:rgba(20,20,40,0.75);
-      backdrop-filter:blur(10px);
-      border:1px solid rgba(100,180,255,0.25);
-      border-radius:10px; padding:8px 12px;
-      font-size:13px; margin-bottom:6px;
+      background:rgba(20,20,40,0.8); backdrop-filter:blur(10px);
+      border:1px solid rgba(100,180,255,0.25); border-radius:10px;
+      padding:8px 12px; font-size:13px; margin-bottom:6px;
       box-shadow:0 3px 12px rgba(0,0,0,0.5);
     }
 
     #controls-wrapper {
-      position:absolute; top:12px; right:12px; z-index:100;
+      position:fixed; top:calc(var(--island-height) + 12px); right:12px; z-index:100;
     }
     #controls-toggle {
       width:48px; height:48px; border-radius:50%;
-      background:var(--panel);
-      backdrop-filter:blur(12px);
-      border:1px solid rgba(0,212,255,0.4);
-      color:var(--accent);
+      background:var(--panel); backdrop-filter:blur(12px);
+      border:1px solid rgba(0,212,255,0.4); color:var(--accent);
       font-size:24px; font-weight:bold;
       display:flex; align-items:center; justify-content:center;
-      cursor:pointer; user-select:none;
-      box-shadow:0 4px 16px rgba(0,0,0,0.6);
-      transition: all 0.25s ease;
+      cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      transition:all 0.25s ease;
     }
     #controls-toggle:hover { transform:scale(1.08); }
-    #controls-toggle.minimized { background:rgba(40,40,70,0.85); }
+    #controls-toggle.minimized { background:rgba(40,40,70,0.9); }
 
     #controls-panel {
-      background:var(--panel);
-      backdrop-filter:blur(16px);
-      border:1px solid rgba(0,212,255,0.35);
-      border-radius:16px;
-      padding:16px 20px;
-      margin-top:12px;
-      width:260px;
-      max-height:80vh; overflow-y:auto;
+      background:var(--panel); backdrop-filter:blur(16px);
+      border:1px solid rgba(0,212,255,0.35); border-radius:16px;
+      padding:16px 18px; margin-top:12px; width:260px;
+      max-height:calc(100vh - var(--island-height) - 100px); overflow-y:auto;
       box-shadow:0 10px 40px rgba(0,0,0,0.7);
-      transition: opacity 0.3s ease, transform 0.3s ease;
+      transition:opacity 0.3s ease, transform 0.3s ease;
     }
-    #controls-panel.hidden {
-      opacity:0;
-      transform:translateY(-20px);
-      pointer-events:none;
-    }
+    #controls-panel.hidden { opacity:0; transform:translateY(-20px); pointer-events:none; }
 
     #controls-panel h3 { margin:0 0 14px; font-size:17px; }
-    #controls-panel label {
-      display:flex; align-items:center; gap:10px;
-      margin:10px 0; font-size:14px; cursor:pointer;
-    }
+    #controls-panel label { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:14px; cursor:pointer; }
     input[type=checkbox] { transform:scale(1.35); accent-color:var(--accent); }
     input[type=range] { width:100%; accent-color:var(--accent); }
-    select {
-      padding:8px 12px; border-radius:8px;
-      background:#1a1a2e; color:var(--text);
-      border:1px solid #334466; width:100%;
-    }
+    select { padding:8px 12px; border-radius:8px; background:#1a1a2e; color:var(--text); border:1px solid #334466; width:100%; }
 
     #status {
-      position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+      position:fixed; bottom:calc(var(--bottom-inset) + 16px); left:50%; transform:translateX(-50%);
       background:rgba(20,20,40,0.85); backdrop-filter:blur(12px);
-      padding:10px 24px; border-radius:999px;
-      border:1px solid rgba(0,180,255,0.3);
-      font-size:15px; white-space:nowrap;
-      transition:opacity 1.5s; pointer-events:none;
+      padding:10px 24px; border-radius:999px; border:1px solid rgba(0,180,255,0.3);
+      font-size:15px; white-space:nowrap; transition:opacity 1.5s; pointer-events:none; z-index:90;
     }
     #status.faded { opacity:0; }
+
+    #island-outline {
+      position:fixed; top:0; left:50%; transform:translateX(-50%);
+      width:140px; height:var(--island-height);
+      pointer-events:none; z-index:80;
+      border-bottom:1px solid rgba(255,255,255,0.12);
+      border-left:1px solid rgba(255,255,255,0.08);
+      border-right:1px solid rgba(255,255,255,0.08);
+      border-radius:0 0 28px 28px;
+      background:linear-gradient(to bottom, rgba(0,0,0,0.4), transparent);
+      opacity:0.6; transition:opacity 0.6s;
+    }
+    #island-outline.hidden { opacity:0; }
   </style>
 </head>
 <body>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
+
+  <div id="island-outline"></div>
 
   <div id="hud">
     <div class="hud-card">FPS: <b id="fps">--</b></div>
@@ -111,7 +105,6 @@
     <div id="controls-toggle" onclick="toggleControls()">–</div>
     <div id="controls-panel">
       <h3>Tracker Controls</h3>
-
       <label><input type="checkbox" id="faceDetect" checked> Face boxes</label>
       <label><input type="checkbox" id="faceMesh" checked> Detailed face mesh</label>
       <label><input type="checkbox" id="objDetect" checked> Objects & people</label>
@@ -123,12 +116,12 @@
 
       <label>Camera
         <select id="camera">
-          <option value="user">Front (selfie)</option>
+          <option value="user" selected>Front (selfie)</option>
           <option value="environment">Back</option>
         </select>
       </label>
 
-      <label title="Lower = more detections, higher false positives">
+      <label>
         Detection confidence
         <input type="range" id="conf" min="30" max="70" value="50" step="1">
         <span id="confVal">0.50</span>
@@ -154,6 +147,7 @@
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const status = document.getElementById("status");
+    const islandOutline = document.getElementById("island-outline");
 
     let detectors = {};
     let running = false;
@@ -170,7 +164,7 @@
       confidence: 0.50
     };
 
-    // ── Controls toggle ───────────────────────────────────────────────────────
+    // Controls toggle
     function toggleControls() {
       const panel = document.getElementById("controls-panel");
       const toggleBtn = document.getElementById("controls-toggle");
@@ -179,7 +173,7 @@
       toggleBtn.classList.toggle("minimized", panel.classList.contains("hidden"));
     }
 
-    // Bind checkboxes & sliders
+    // Bind controls
     document.querySelectorAll('#controls-panel input[type=checkbox]').forEach(el => {
       el.onchange = () => state[el.id] = el.checked;
     });
@@ -240,9 +234,7 @@
     }
 
     async function startCamera() {
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-      }
+      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -257,6 +249,10 @@
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
+
+          // Show Dynamic Island outline only on front camera
+          islandOutline.classList.toggle("hidden", state.facingMode !== "user");
+
           status.textContent = "Tracking active";
           running = true;
           requestAnimationFrame(predictLoop);
@@ -268,6 +264,7 @@
 
     function restartCamera() {
       running = false;
+      islandOutline.classList.add("hidden");
       setTimeout(startCamera, 400);
     }
 
@@ -291,7 +288,6 @@
 
       const isMirrored = state.facingMode === "user";
 
-      // Draw mirrored video if front cam
       ctx.save();
       if (isMirrored) {
         ctx.scale(-1, 1);
@@ -302,9 +298,6 @@
 
       const now = performance.now();
 
-      // ── All detections run on raw video (unmirrored) ───────────────────────
-      // Then we mirror coordinates when drawing
-
       // Face boxes
       if (state.faceDetect && detectors.faceDetect) {
         const r = await detectors.faceDetect.detectForVideo(video, now);
@@ -313,7 +306,6 @@
           let y = d.boundingBox.originY;
           let w = d.boundingBox.width;
           let h = d.boundingBox.height;
-
           if (isMirrored) x = canvas.width - (x + w);
 
           ctx.strokeStyle = "rgba(0,212,255,0.9)";
@@ -335,11 +327,7 @@
       if (state.faceMesh && detectors.faceMesh) {
         const r = await detectors.faceMesh.detectForVideo(video, now);
         for (const lm of r.faceLandmarks) {
-          const mirroredLm = lm.map(p => ({
-            x: isMirrored ? 1 - p.x : p.x,
-            y: p.y,
-            z: p.z
-          }));
+          const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z }));
           drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
           drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
         }
@@ -353,7 +341,6 @@
           let y = d.boundingBox.originY;
           let w = d.boundingBox.width;
           let h = d.boundingBox.height;
-
           if (isMirrored) x = canvas.width - (x + w);
 
           const cat = d.categories[0];
@@ -377,12 +364,7 @@
       if (state.poseLand && detectors.poseLand) {
         const r = await detectors.poseLand.detectForVideo(video, now);
         for (const lm of r.landmarks) {
-          const mirroredLm = lm.map(p => ({
-            x: isMirrored ? 1 - p.x : p.x,
-            y: p.y,
-            z: p.z,
-            visibility: p.visibility
-          }));
+          const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility }));
           drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
           drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
         }
@@ -437,7 +419,6 @@
       requestAnimationFrame(predictLoop);
     }
 
-    // ── Start ────────────────────────────────────────────────────────────────
     initModels().catch(err => {
       status.textContent = "Init failed: " + err.message;
       console.error(err);
