@@ -3,20 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Fast Person + Hand + Object Tracker (MediaPipe Tasks)</title>
+  <title>Tracker: Hands + Body + Objects + Faces</title>
   <style>
-    body { margin:0; background:#000; font-family:Arial, sans-serif; color:#fff; }
-    #container { position:relative; width:100vw; height:100vh; overflow:hidden; }
+    body { margin:0; background:#000; font-family:Arial, sans-serif; color:#fff; overflow:hidden; }
+    #container { position:relative; width:100vw; height:100vh; }
     #video, #canvas { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
     #canvas { pointer-events:none; }
-    #status { position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:6px; z-index:10; }
+    #controls {
+      position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:12px; border-radius:8px;
+      z-index:20; font-size:14px; max-width:240px;
+    }
+    #controls label { display:block; margin:6px 0; }
+    #status { position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.5); padding:6px 10px; border-radius:6px; z-index:10; }
   </style>
 </head>
 <body>
   <div id="container">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
-    <div id="status">Loading models...</div>
+    <div id="controls">
+      <strong>Settings</strong><br>
+      <label><input type="checkbox" id="faceOn" checked> Faces (boxes + landmarks)</label>
+      <label><input type="checkbox" id="objOn" checked> Objects (boxes)</label>
+      <label><input type="checkbox" id="poseOn" checked> Body Skeleton</label>
+      <label><input type="checkbox" id="handOn" checked> Hands (fingers)</label>
+      <label>Camera: <select id="cameraMode"><option value="user">Front</option><option value="environment">Back</option></select></label>
+      <label>Face Conf: <input type="range" id="faceConf" min="0.3" max="0.8" step="0.05" value="0.5"></label>
+      <label>Obj Conf: <input type="range" id="objConf" min="0.2" max="0.7" step="0.05" value="0.4"></label>
+      <label>Hand/Pose Conf: <input type="range" id="detConf" min="0.3" max="0.8" step="0.05" value="0.5"></label>
+      <div id="fps">FPS: --</div>
+    </div>
+    <div id="status">Loading...</div>
   </div>
 
   <script type="module">
@@ -25,6 +42,7 @@
       HandLandmarker,
       PoseLandmarker,
       ObjectDetector,
+      FaceDetector,
       DrawingUtils
     } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
@@ -32,123 +50,218 @@
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const status = document.getElementById("status");
+    const fpsDisplay = document.getElementById("fps");
 
-    let handLandmarker, poseLandmarker, objectDetector;
+    let handLandmarker, poseLandmarker, objectDetector, faceDetector;
     let running = false;
     const drawingUtils = new DrawingUtils(ctx);
 
-    // ── Init Models ───────────────────────────────────────────────────────────────
+    // Settings
+    const settings = {
+      faces: true,
+      objects: true,
+      pose: true,
+      hands: true,
+      facingMode: "user",
+      faceThreshold: 0.5,
+      objThreshold: 0.4,
+      detThreshold: 0.5
+    };
+
+    // UI listeners
+    document.getElementById("faceOn").addEventListener("change", e => { settings.faces = e.target.checked; });
+    document.getElementById("objOn").addEventListener("change", e => { settings.objects = e.target.checked; });
+    document.getElementById("poseOn").addEventListener("change", e => { settings.pose = e.target.checked; });
+    document.getElementById("handOn").addEventListener("change", e => { settings.hands = e.target.checked; });
+    document.getElementById("cameraMode").addEventListener("change", e => {
+      settings.facingMode = e.target.value;
+      restartCamera();
+    });
+    document.getElementById("faceConf").addEventListener("input", e => {
+      settings.faceThreshold = parseFloat(e.target.value);
+      if (faceDetector) faceDetector.setOptions({ minDetectionConfidence: settings.faceThreshold });
+    });
+    document.getElementById("objConf").addEventListener("input", e => {
+      settings.objThreshold = parseFloat(e.target.value);
+      if (objectDetector) objectDetector.setOptions({ scoreThreshold: settings.objThreshold });
+    });
+    document.getElementById("detConf").addEventListener("input", e => {
+      settings.detThreshold = parseFloat(e.target.value);
+      if (handLandmarker) handLandmarker.setOptions({ minHandDetectionConfidence: settings.detThreshold, minTrackingConfidence: settings.detThreshold });
+      if (poseLandmarker) poseLandmarker.setOptions({ minPoseDetectionConfidence: settings.detThreshold });
+    });
+
     async function initialize() {
-      status.textContent = "Loading vision wasm...";
+      status.textContent = "Loading WASM...";
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
 
+      status.textContent = "Loading Face model...";
+      faceDetector = await FaceDetector.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+        },
+        runningMode: "VIDEO",
+        minDetectionConfidence: settings.faceThreshold
+      });
+
       status.textContent = "Loading Hand model...";
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task` },
+        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" },
         runningMode: "VIDEO",
-        numHands: 2
+        numHands: 2,
+        minHandDetectionConfidence: settings.detThreshold,
+        minTrackingConfidence: settings.detThreshold
       });
 
       status.textContent = "Loading Pose model...";
       poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task` },
+        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" },
         runningMode: "VIDEO",
-        numPoses: 2
+        numPoses: 2,
+        minPoseDetectionConfidence: settings.detThreshold
       });
 
-      status.textContent = "Loading Object Detector (COCO)...";
+      status.textContent = "Loading Objects...";
       objectDetector = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite` },
-        scoreThreshold: 0.4,   // Tune for fewer false positives
+        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite" },
+        scoreThreshold: settings.objThreshold,
         runningMode: "VIDEO"
       });
 
-      status.textContent = "Models loaded! Starting camera...";
+      status.textContent = "Ready — allow camera";
       await startCamera();
     }
 
     async function startCamera() {
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" }  // "environment" for back camera
+          video: { facingMode: settings.facingMode }
         });
         video.srcObject = stream;
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          status.textContent = "Ready — show hands & people!";
+          status.textContent = "Tracking active!";
           running = true;
           predictLoop();
         };
       } catch (err) {
         status.textContent = "Camera error: " + err.message;
-        console.error(err);
       }
     }
 
+    function restartCamera() {
+      running = false;
+      setTimeout(startCamera, 300);
+    }
+
+    let lastTime = 0, frameCount = 0;
     async function predictLoop() {
       if (!running) return;
 
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime > 1000) {
+        fpsDisplay.textContent = `FPS: ${Math.round(frameCount * 1000 / (now - lastTime))}`;
+        lastTime = now;
+        frameCount = 0;
+      }
+
       ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Mirror if front camera
-      ctx.scale(-1, 1);
-      ctx.translate(-canvas.width, 0);
+      if (settings.facingMode === "user") {
+        ctx.scale(-1, 1);
+        ctx.translate(-canvas.width, 0);
+      }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       ctx.restore();
 
-      const startTimeMs = performance.now();
+      const startMs = performance.now();
 
-      // ── Object Detection (boxes around people & items) ────────────────────────
-      const objResults = await objectDetector.detectForVideo(video, startTimeMs);
-      for (const detection of objResults.detections) {
-        const box = detection.boundingBox;
-        const cat = detection.categories[0];
-        const label = `${cat.categoryName} ${Math.round(cat.score * 100)}%`;
+      // Faces
+      if (settings.faces) {
+        const faceRes = await faceDetector.detectForVideo(video, startMs);
+        for (const detection of faceRes.detections) {
+          const box = detection.boundingBox;
+          const conf = (detection.detections?.[0]?.score ?? detection.confidence) * 100 || 0;
+          const label = `Face ${Math.round(conf)}%`;
 
-        ctx.strokeStyle = "#00FF00";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(box.originX, box.originY, box.width, box.height);
+          // Blue box
+          ctx.strokeStyle = "#0066FF";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(box.originX, box.originY, box.width, box.height);
 
-        ctx.fillStyle = "rgba(0,255,0,0.7)";
-        ctx.font = "16px Arial";
-        ctx.fillText(label, box.originX + 5, box.originY + 20);
+          // Label
+          ctx.fillStyle = "rgba(0,102,255,0.7)";
+          ctx.font = "16px Arial";
+          ctx.fillText(label, box.originX + 5, box.originY + 20);
+
+          // Facial landmarks (6 points: right eye, left eye, nose, mouth right, mouth left, right ear tragion, left ear tragion)
+          for (const lm of detection.keypoints) {
+            const x = lm.x * canvas.width;
+            const y = lm.y * canvas.height;
+            ctx.fillStyle = "#FF0000";
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+        }
       }
 
-      // ── Pose (body skeleton) ──────────────────────────────────────────────────
-      const poseResults = await poseLandmarker.detectForVideo(video, startTimeMs);
-      for (const pose of poseResults.landmarks) {
-        drawingUtils.drawLandmarks(pose, { color: "#FF0000", lineWidth: 2, radius: 4 });
-        drawingUtils.drawConnectors(pose, PoseLandmarker.POSE_CONNECTIONS, { color: "#00FF88", lineWidth: 4 });
+      // Objects
+      if (settings.objects) {
+        const objRes = await objectDetector.detectForVideo(video, startMs);
+        for (const det of objRes.detections) {
+          const box = det.boundingBox;
+          const cat = det.categories[0];
+          const label = `${cat.categoryName} ${(cat.score * 100).toFixed(0)}%`;
+
+          ctx.strokeStyle = "#00FF00";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(box.originX, box.originY, box.width, box.height);
+
+          ctx.fillStyle = "rgba(0,255,0,0.6)";
+          ctx.font = "16px Arial";
+          ctx.fillText(label, box.originX + 5, box.originY + 20);
+        }
       }
 
-      // ── Hands (detailed fingers) ──────────────────────────────────────────────
-      const handResults = await handLandmarker.detectForVideo(video, startTimeMs);
-      for (const landmarks of handResults.landmarks) {
-        drawingUtils.drawLandmarks(landmarks, { color: "#FFDD00", lineWidth: 2, radius: 5 });
-        drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: "#00FFFF", lineWidth: 4 });
+      // Pose
+      if (settings.pose) {
+        const poseRes = await poseLandmarker.detectForVideo(video, startMs);
+        for (const landmarks of poseRes.landmarks) {
+          drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: "#00FF88", lineWidth: 4 });
+        }
       }
 
-      // Handedness labels (left/right)
-      for (let i = 0; i < handResults.handedness.length; i++) {
-        const h = handResults.handedness[i][0];
-        const lm = handResults.landmarks[i][0]; // wrist
-        const x = lm.x * canvas.width;
-        const y = lm.y * canvas.height;
-        ctx.fillStyle = "#FFFFFF";
-        ctx.font = "14px Arial";
-        ctx.fillText(h.categoryName, x - 30, y - 10);
+      // Hands
+      if (settings.hands) {
+        const handRes = await handLandmarker.detectForVideo(video, startMs);
+        for (const landmarks of handRes.landmarks) {
+          drawingUtils.drawLandmarks(landmarks, { color: "#FFDD00", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: "#00FFFF", lineWidth: 4 });
+        }
+        for (let i = 0; i < handRes.handedness.length; i++) {
+          const h = handRes.handedness[i][0];
+          const lm = handRes.landmarks[i][0];
+          const x = lm.x * canvas.width * (settings.facingMode === "user" ? -1 : 1) + (settings.facingMode === "user" ? canvas.width : 0);
+          const y = lm.y * canvas.height;
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "14px Arial";
+          ctx.fillText(h.categoryName, x - 30, y - 10);
+        }
       }
 
-      ctx.restore();
       requestAnimationFrame(predictLoop);
     }
 
-    // Start everything
     initialize().catch(err => {
-      status.textContent = "Init failed: " + err.message;
+      status.textContent = "Failed: " + err.message;
       console.error(err);
     });
   </script>
