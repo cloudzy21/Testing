@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-  <title>MediaPipe Tracker – Island Tap Menu</title>
+  <title>MediaPipe Tracker – Fixed Island Tap</title>
   <style>
     :root {
       --bg: #0f0f1a;
-      --panel: rgba(30, 30, 50, 0.75);
+      --panel: rgba(30, 30, 50, 0.78);
       --accent: #00d4ff;
       --text: #f0f4ff;
       --island-height: env(safe-area-inset-top, 59px);
@@ -19,50 +19,62 @@
     #video, #canvas { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; }
     #canvas { pointer-events:none; }
 
-    #hud { position:fixed; top:calc(var(--island-height) + 12px); left:12px; z-index:90; pointer-events:none; }
-    .hud-card { background:rgba(20,20,40,0.8); backdrop-filter:blur(10px);
-      border:1px solid rgba(100,180,255,0.25); border-radius:10px;
-      padding:8px 12px; font-size:13px; margin-bottom:6px; box-shadow:0 3px 12px rgba(0,0,0,0.5); }
+    #hud { 
+      position:fixed; top:calc(var(--island-height) + 8px); left:10px; right:10px; z-index:90; 
+      pointer-events:none; display:flex; flex-direction:column; gap:6px; 
+    }
+    .hud-card { 
+      background:rgba(20,20,40,0.85); backdrop-filter:blur(12px);
+      border:1px solid rgba(0,212,255,0.2); border-radius:12px;
+      padding:8px 12px; font-size:12px; text-align:center; 
+      box-shadow:0 2px 10px rgba(0,0,0,0.5); 
+    }
+    .hud-card b { color:var(--accent); }
 
     #controls-panel {
-      position:fixed; top:calc(var(--island-height) + 8px); right:12px; z-index:100;
+      position:fixed; top:calc(var(--island-height) + 8px); right:10px; z-index:100;
       background:var(--panel); backdrop-filter:blur(16px);
-      border:1px solid rgba(0,212,255,0.35); border-radius:16px;
-      padding:16px 18px; width:260px;
+      border:1px solid rgba(0,212,255,0.4); border-radius:16px;
+      padding:14px 16px; width:240px; /* fits iPhone 16 Pro perfectly */
       max-height:calc(100vh - var(--island-height) - 80px); overflow-y:auto;
-      box-shadow:0 10px 40px rgba(0,0,0,0.7);
-      transition:opacity 0.3s ease, transform 0.3s ease;
+      box-shadow:0 8px 32px rgba(0,0,0,0.7);
+      transition:opacity 0.35s ease, transform 0.35s ease;
     }
-    #controls-panel.hidden { opacity:0; transform:translateY(-30px); pointer-events:none; }
+    #controls-panel.hidden { opacity:0; transform:translateY(-40px); pointer-events:none; }
 
-    #controls-panel h3 { margin:0 0 14px; font-size:17px; }
-    #controls-panel label { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:14px; cursor:pointer; }
-    input[type=checkbox] { transform:scale(1.35); accent-color:var(--accent); }
+    #controls-panel h3 { margin:0 0 12px; font-size:16px; text-align:center; }
+    #controls-panel label { display:flex; align-items:center; gap:8px; margin:8px 0; font-size:13px; cursor:pointer; }
+    input[type=checkbox] { transform:scale(1.3); accent-color:var(--accent); }
     input[type=range] { width:100%; accent-color:var(--accent); }
-    select { padding:8px 12px; border-radius:8px; background:#1a1a2e; color:var(--text); border:1px solid #334466; width:100%; }
+    select { padding:7px 10px; border-radius:8px; background:#1a1a2e; color:var(--text); border:1px solid #334466; width:100%; font-size:13px; }
 
-    #status { position:fixed; bottom:calc(var(--bottom-inset) + 16px); left:50%; transform:translateX(-50%);
-      background:rgba(20,20,40,0.85); backdrop-filter:blur(12px);
-      padding:10px 24px; border-radius:999px; border:1px solid rgba(0,180,255,0.3);
-      font-size:15px; white-space:nowrap; transition:opacity 1.5s; pointer-events:none; z-index:90; }
+    #status { 
+      position:fixed; bottom:calc(var(--bottom-inset) + 12px); left:50%; transform:translateX(-50%);
+      background:rgba(20,20,40,0.9); backdrop-filter:blur(12px);
+      padding:8px 18px; border-radius:999px; border:1px solid rgba(0,180,255,0.3);
+      font-size:14px; white-space:nowrap; transition:opacity 1.5s; pointer-events:none; z-index:90;
+    }
     #status.faded { opacity:0; }
 
-    /* Dynamic Island tap zone & full outline */
+    /* Dynamic Island tap zone & full pill outline */
     #island-zone {
       position:fixed; top:0; left:50%; transform:translateX(-50%);
-      width:220px; height:var(--island-height); 
+      width:240px; /* wider for reliable tap */
+      height:var(--island-height); 
       pointer-events:auto; z-index:95; cursor:pointer;
     }
     #island-outline {
       position:fixed; top:0; left:50%; transform:translateX(-50%);
-      width:180px; height:var(--island-height);
+      width:190px; height:var(--island-height);
       pointer-events:none; z-index:80;
       border:2px solid var(--accent);
-      border-radius:40px;
-      box-shadow:0 0 20px var(--accent), inset 0 0 10px rgba(0,212,255,0.3);
-      opacity:0.75; transition:opacity 0.6s, box-shadow 0.6s;
+      border-radius:40px; /* full pill shape */
+      box-shadow:0 0 24px rgba(0,212,255,0.5), inset 0 0 12px rgba(0,212,255,0.4);
+      opacity:0.8; transition:opacity 0.5s, box-shadow 0.5s;
     }
-    #island-outline.menu-open { opacity:1; box-shadow:0 0 30px var(--accent), inset 0 0 15px rgba(0,212,255,0.5); }
+    #island-outline.menu-open { 
+      opacity:1; box-shadow:0 0 40px var(--accent), inset 0 0 18px rgba(0,212,255,0.6); 
+    }
     #island-outline.hidden { opacity:0; }
   </style>
 </head>
@@ -90,7 +102,7 @@
     <label><input type="checkbox" id="handLand" checked> Detailed hands</label>
     <label><input type="checkbox" id="segment"> Person mask overlay</label>
 
-    <hr style="margin:16px 0; border-color:#334466;">
+    <hr style="margin:14px 0; border-color:#334466;">
 
     <label>Camera
       <select id="camera">
@@ -163,8 +175,7 @@
     };
 
     async function initModels() {
-      status.textContent = "Loading WASM & models…";
-
+      status.textContent = "Loading models...";
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
@@ -201,8 +212,8 @@
         runningMode: "VIDEO", outputCategoryMask: true
       });
 
-      status.textContent = "Models loaded – opening camera";
-      setTimeout(() => status.classList.add("faded"), 3500);
+      status.textContent = "Models loaded – camera starting";
+      setTimeout(() => status.classList.add("faded"), 3000);
       startCamera();
     }
 
@@ -223,19 +234,19 @@
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           islandOutline.classList.toggle("hidden", state.facingMode !== "user");
-          status.textContent = "Tracking active – tap top center to toggle menu";
+          status.textContent = "Tracking ready – tap Dynamic Island to toggle menu";
           running = true;
           requestAnimationFrame(predictLoop);
         };
       } catch (err) {
-        status.textContent = "Camera failed: " + err.message;
+        status.textContent = "Camera error: " + err.message;
       }
     }
 
     function restartCamera() {
       running = false;
       islandOutline.classList.add("hidden");
-      setTimeout(startCamera, 400);
+      setTimeout(startCamera, 300);
     }
 
     function updateDetectorOptions() {
@@ -268,6 +279,7 @@
 
       const now = performance.now();
 
+      // Face detection & boxes
       if (state.faceDetect && detectors.faceDetect) {
         const r = await detectors.faceDetect.detectForVideo(video, now);
         for (const d of r.detections) {
@@ -284,23 +296,25 @@
           ctx.shadowColor = "rgba(0,212,255,0.7)";
           ctx.shadowBlur = 12;
           ctx.fillStyle = "rgba(0,40,60,0.7)";
-          ctx.fillRect(x + 4, y + 4, 120, 26);
+          ctx.fillRect(x + 4, y + 4, 110, 24);
           ctx.shadowBlur = 0;
           ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 15px Arial";
-          ctx.fillText(`Face ${(d.confidence*100)|0}%`, x + 10, y + 22);
+          ctx.font = "bold 14px Arial";
+          ctx.fillText(`Face ${(d.confidence*100)|0}%`, x + 8, y + 20);
         }
       }
 
+      // Face mesh
       if (state.faceMesh && detectors.faceMesh) {
         const r = await detectors.faceMesh.detectForVideo(video, now);
         for (const lm of r.faceLandmarks) {
           const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z }));
-          drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
-          drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
+          drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.2, radius: 1.8 });
+          drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.5)", lineWidth: 2 });
         }
       }
 
+      // Objects
       if (state.objDetect && detectors.objDetect) {
         const r = await detectors.objDetect.detectForVideo(video, now);
         for (const d of r.detections) {
@@ -313,29 +327,31 @@
           const cat = d.categories[0];
           const isPerson = cat.categoryName.toLowerCase().includes("person");
           ctx.strokeStyle = isPerson ? "#ff4d94" : "#00ff9d";
-          ctx.lineWidth = 5;
+          ctx.lineWidth = 4;
           ctx.shadowColor = ctx.strokeStyle;
-          ctx.shadowBlur = 15;
+          ctx.shadowBlur = 12;
           ctx.strokeRect(x, y, w, h);
           ctx.shadowBlur = 0;
 
-          ctx.fillStyle = "rgba(10,20,30,0.75)";
-          ctx.fillRect(x + 6, y + 6, 140, 28);
+          ctx.fillStyle = "rgba(10,20,30,0.7)";
+          ctx.fillRect(x + 4, y + 4, 130, 26);
           ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 16px Arial";
-          ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, x + 12, y + 24);
+          ctx.font = "bold 14px Arial";
+          ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, x + 8, y + 20);
         }
       }
 
+      // Pose
       if (state.poseLand && detectors.poseLand) {
         const r = await detectors.poseLand.detectForVideo(video, now);
         for (const lm of r.landmarks) {
           const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility }));
-          drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
-          drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
+          drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2, radius: 4 });
+          drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 5 });
         }
       }
 
+      // Hands
       if (state.handLand && detectors.handLand) {
         const r = await detectors.handLand.detectForVideo(video, now);
         for (let i = 0; i < r.landmarks.length; i++) {
@@ -347,8 +363,8 @@
             presence: p.presence
           }));
 
-          drawUtils.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2.5, radius: 6 });
-          drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 6 });
+          drawUtils.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2, radius: 5 });
+          drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 5 });
 
           const handed = r.handedness[i]?.[0];
           if (handed) {
@@ -356,23 +372,24 @@
             const wx = wrist.x * canvas.width;
             const wy = wrist.y * canvas.height;
             ctx.shadowColor = "#00ffff";
-            ctx.shadowBlur = 10;
-            ctx.fillStyle = "#000000cc";
-            ctx.fillRect(wx - 50, wy - 35, 100, 28);
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = "#000000aa";
+            ctx.fillRect(wx - 40, wy - 30, 80, 24);
             ctx.shadowBlur = 0;
             ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 15px Arial";
+            ctx.font = "bold 13px Arial";
             ctx.textAlign = "center";
-            ctx.fillText(handed.categoryName, wx, wy - 18);
+            ctx.fillText(handed.categoryName, wx, wy - 15);
             ctx.textAlign = "left";
           }
         }
       }
 
+      // Segmentation
       if (state.segment && detectors.segment) {
         const r = await detectors.segment.segmentForVideo(video, now);
         if (r.categoryMask) {
-          ctx.globalAlpha = 0.4;
+          ctx.globalAlpha = 0.35;
           ctx.globalCompositeOperation = "screen";
           ctx.drawImage(r.categoryMask.getAsCanvasImageSource(), 0, 0, canvas.width, canvas.height);
           ctx.globalAlpha = 1;
