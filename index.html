@@ -14,7 +14,6 @@
 
   --island-width: 160px;
   --island-height: 38px;
-
   --island-offset: -7px;
 
   --glow: 22px;
@@ -185,7 +184,7 @@ input[type=range] {
   <label><input type="checkbox" id="handLand" checked> Detailed hands</label>
   <label><input type="checkbox" id="segment"> Person mask overlay</label>
 
-  <hr style="margin:12px 0; border-color:#334466;">
+  <hr style="margin:16px 0;border-color:#334466">
 
   <label>Camera
     <select id="camera">
@@ -195,8 +194,8 @@ input[type=range] {
   </label>
 
   <label>
-    Detection confidence
-    <input type="range" id="conf" min="30" max="70" value="50" step="1">
+    Confidence
+    <input type="range" id="conf" min="30" max="70" value="50">
     <span id="confVal">0.50</span>
   </label>
 </div>
@@ -204,7 +203,7 @@ input[type=range] {
 <div id="hud">
   <div class="hud-card">FPS: <b id="fps">--</b></div>
   <div class="hud-card">
-    Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b><br>
+    Faces: <b id="faceCount">0</b> · Objects: <b id="objCount">0</b><br>
     Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
   </div>
 </div>
@@ -214,11 +213,11 @@ input[type=range] {
 <script type="module">
 import {
   FilesetResolver,
-  HandLandmarker,
-  PoseLandmarker,
-  ObjectDetector,
   FaceDetector,
   FaceLandmarker,
+  ObjectDetector,
+  PoseLandmarker,
+  HandLandmarker,
   ImageSegmenter,
   DrawingUtils
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
@@ -226,22 +225,14 @@ import {
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const status = document.getElementById("status");
-const islandZone = document.getElementById("island-zone");
-const islandOutline = document.getElementById("island-outline");
-const controls = document.getElementById("controls");
+const draw = new DrawingUtils(ctx);
+
 const fpsEl = document.getElementById("fps");
-const objCount = document.getElementById("objCount");
 const faceCount = document.getElementById("faceCount");
+const objCount = document.getElementById("objCount");
 const handCount = document.getElementById("handCount");
 const poseCount = document.getElementById("poseCount");
-const confSlider = document.getElementById("conf");
-const confVal = document.getElementById("confVal");
-const cameraSelect = document.getElementById("camera");
-
-let detectors = {};
-let running = false;
-const drawUtils = new DrawingUtils(ctx);
+const status = document.getElementById("status");
 
 const state = {
   faceDetect: true,
@@ -251,256 +242,167 @@ const state = {
   handLand: true,
   segment: false,
   facingMode: "user",
-  confidence: 0.50
+  confidence: 0.5
 };
 
-let menuOpen = false;
-let lastTs = 0, frameCt = 0;
-
-// Tap island to toggle menu
-islandZone.onclick = () => {
-  menuOpen = !menuOpen;
-  controls.classList.toggle("open", menuOpen);
-  islandOutline.classList.toggle("menu-open", menuOpen);
-  navigator.vibrate?.(10);
+document.getElementById("island-zone").onclick = () => {
+  document.getElementById("controls").classList.toggle("open");
+  document.getElementById("island-outline").classList.toggle("menu-open");
 };
 
-// Confidence slider
-confSlider.oninput = e => {
-  state.confidence = e.target.value / 100;
-  confVal.textContent = state.confidence.toFixed(2);
-  updateDetectorOptions();
-};
+document.querySelectorAll("input[type=checkbox]").forEach(el => {
+  el.onchange = () => state[el.id] = el.checked;
+});
 
-// Camera switch
-cameraSelect.onchange = e => {
+document.getElementById("camera").onchange = e => {
   state.facingMode = e.target.value;
-  restartCamera();
+  startCamera();
 };
 
-async function initModels() {
-  status.textContent = "Loading models...";
+document.getElementById("conf").oninput = e => {
+  state.confidence = e.target.value / 100;
+  document.getElementById("confVal").textContent = state.confidence.toFixed(2);
+};
 
+let detectors = {};
+let running = false;
+let last = 0, frames = 0;
+
+async function init() {
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
 
-  const conf = state.confidence;
-
   detectors.faceDetect = await FaceDetector.createFromOptions(vision, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite" },
-    runningMode: "VIDEO", minDetectionConfidence: conf
+    runningMode: "VIDEO"
   });
 
   detectors.faceMesh = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" },
-    runningMode: "VIDEO", numFaces: 3
+    runningMode: "VIDEO"
   });
 
   detectors.objDetect = await ObjectDetector.createFromOptions(vision, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite" },
-    scoreThreshold: conf, runningMode: "VIDEO"
+    runningMode: "VIDEO"
   });
 
   detectors.poseLand = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" },
-    runningMode: "VIDEO", numPoses: 2
+    runningMode: "VIDEO"
   });
 
   detectors.handLand = await HandLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" },
-    runningMode: "VIDEO", numHands: 2
+    runningMode: "VIDEO"
   });
 
-  detectors.segment = await ImageSegmenter.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmentation/float16/1/selfie_segmentation.tflite" },
-    runningMode: "VIDEO", outputCategoryMask: true
-  });
+  try {
+    detectors.segment = await ImageSegmenter.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmentation/float16/latest/selfie_segmentation.tflite" },
+      runningMode: "VIDEO",
+      outputCategoryMask: true
+    });
+  } catch (e) {
+    console.warn("Segmentation model failed to load:", e);
+    state.segment = false;
+  }
 
-  status.textContent = "Ready – tap Dynamic Island to toggle menu";
-  setTimeout(() => status.classList.add("faded"), 4000);
   startCamera();
 }
 
 async function startCamera() {
   if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: state.facingMode,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
-      }
-    });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: state.facingMode }
+  });
+  video.srcObject = stream;
 
-    video.srcObject = stream;
-    video.onloadedmetadata = () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      status.textContent = "Tracking active";
-      running = true;
-      requestAnimationFrame(predictLoop);
-    };
-  } catch (err) {
-    status.textContent = "Camera error: " + err.message;
-  }
+  video.onloadedmetadata = () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    running = true;
+    status.textContent = "Tracking active";
+    requestAnimationFrame(loop);
+  };
 }
 
-function restartCamera() {
-  running = false;
-  setTimeout(startCamera, 300);
-}
-
-function updateDetectorOptions() {
-  const c = state.confidence;
-  detectors.faceDetect?.setOptions({ minDetectionConfidence: c });
-  detectors.objDetect?.setOptions({ scoreThreshold: c });
-  detectors.poseLand?.setOptions({ minPoseDetectionConfidence: c });
-  detectors.handLand?.setOptions({ minHandDetectionConfidence: c, minTrackingConfidence: c });
-}
-
-let lastTs = 0, frameCt = 0;
-async function predictLoop(ts) {
-  if (!running) return;
-
-  frameCt++;
-  if (ts - lastTs > 1000) {
-    fpsEl.textContent = Math.round(frameCt * 1000 / (ts - lastTs));
-    lastTs = ts; frameCt = 0;
+function loop(ts) {
+  frames++;
+  if (ts - last > 1000) {
+    fpsEl.textContent = frames;
+    frames = 0;
+    last = ts;
   }
 
-  const isMirrored = state.facingMode === "user";
-
-  ctx.save();
-  if (isMirrored) {
-    ctx.scale(-1, 1);
-    ctx.translate(-canvas.width, 0);
-  }
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  ctx.restore();
-
   const now = performance.now();
 
-  let objC = 0, faceC = 0, handC = 0, poseC = 0;
+  let f = 0, o = 0, h = 0, p = 0;
 
-  // Face detection
-  if (state.faceDetect && detectors.faceDetect) {
-    const r = await detectors.faceDetect.detectForVideo(video, now);
-    faceC = r.detections.length;
-    for (const d of r.detections) {
-      let x = d.boundingBox.originX;
-      let y = d.boundingBox.originY;
-      let w = d.boundingBox.width;
-      let h = d.boundingBox.height;
-      if (isMirrored) x = canvas.width - (x + w);
-
-      ctx.strokeStyle = "rgba(0,212,255,0.9)";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(x, y, w, h);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "12px Arial";
-      ctx.fillText(`Face ${(d.confidence*100)|0}%`, x + 6, y + 16);
-    }
+  if (state.faceDetect) {
+    const r = detectors.faceDetect.detectForVideo(video, now);
+    f = r.detections.length;
+    for (const d of r.detections)
+      ctx.strokeRect(d.boundingBox.originX, d.boundingBox.originY, d.boundingBox.width, d.boundingBox.height);
   }
 
-  // Face mesh
-  if (state.faceMesh && detectors.faceMesh) {
-    const r = await detectors.faceMesh.detectForVideo(video, now);
-    for (const lm of r.faceLandmarks) {
-      const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z }));
-      drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
-      drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
-    }
+  if (state.faceMesh) {
+    const r = detectors.faceMesh.detectForVideo(video, now);
+    r.faceLandmarks.forEach(l => {
+      draw.drawLandmarks(l, {color:"#ffcc00", radius:1.5});
+      draw.drawConnectors(l, FaceLandmarker.FACE_CONNECTIONS, {color:"#ffaa00"});
+    });
   }
 
-  // Objects
-  if (state.objDetect && detectors.objDetect) {
-    const r = await detectors.objDetect.detectForVideo(video, now);
-    objC = r.detections.length;
-    for (const d of r.detections) {
-      let x = d.boundingBox.originX;
-      let y = d.boundingBox.originY;
-      let w = d.boundingBox.width;
-      let h = d.boundingBox.height;
-      if (isMirrored) x = canvas.width - (x + w);
-
-      const cat = d.categories[0];
-      const isPerson = cat.categoryName.toLowerCase().includes("person");
-      ctx.strokeStyle = isPerson ? "#ff4d94" : "#00ff9d";
-      ctx.lineWidth = 5;
-      ctx.strokeRect(x, y, w, h);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "12px Arial";
-      ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, x + 6, y + 16);
-    }
+  if (state.objDetect) {
+    const r = detectors.objDetect.detectForVideo(video, now);
+    o = r.detections.length;
+    r.detections.forEach(d => {
+      ctx.strokeStyle="#00ff9d";
+      ctx.lineWidth=4;
+      ctx.strokeRect(d.boundingBox.originX, d.boundingBox.originY, d.boundingBox.width, d.boundingBox.height);
+    });
   }
 
-  // Pose
-  if (state.poseLand && detectors.poseLand) {
-    const r = await detectors.poseLand.detectForVideo(video, now);
-    poseC = r.landmarks.length;
-    for (const lm of r.landmarks) {
-      const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility }));
-      drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
-      drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
-    }
+  if (state.poseLand) {
+    const r = detectors.poseLand.detectForVideo(video, now);
+    p = r.landmarks.length;
+    r.landmarks.forEach(l => {
+      draw.drawLandmarks(l, {color:"#ff3366"});
+      draw.drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, {color:"#33ff99"});
+    });
   }
 
-  // Hands
-  if (state.handLand && detectors.handLand) {
-    const r = await detectors.handLand.detectForVideo(video, now);
-    handC = r.landmarks.length;
-    for (let i = 0; i < r.landmarks.length; i++) {
-      const lm = r.landmarks[i].map(p => ({
-        x: isMirrored ? 1 - p.x : p.x,
-        y: p.y,
-        z: p.z,
-        visibility: p.visibility,
-        presence: p.presence
-      }));
-
-      drawUtils.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2.5, radius: 6 });
-      drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 6 });
-
-      const handed = r.handedness[i]?.[0];
-      if (handed) {
-        const wrist = lm[0];
-        const wx = wrist.x * canvas.width;
-        const wy = wrist.y * canvas.height;
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "12px Arial";
-        ctx.fillText(handed.categoryName, wx - 30, wy - 10);
-      }
-    }
+  if (state.handLand) {
+    const r = detectors.handLand.detectForVideo(video, now);
+    h = r.landmarks.length;
+    r.landmarks.forEach(l => {
+      draw.drawLandmarks(l, {color:"#ffff66"});
+      draw.drawConnectors(l, HandLandmarker.HAND_CONNECTIONS, {color:"#00ffff"});
+    });
   }
 
-  // Segmentation
   if (state.segment && detectors.segment) {
-    const r = await detectors.segment.segmentForVideo(video, now);
+    const r = detectors.segment.segmentForVideo(video, now);
     if (r.categoryMask) {
-      ctx.globalAlpha = 0.35;
-      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = .35;
       ctx.drawImage(r.categoryMask.getAsCanvasImageSource(), 0, 0, canvas.width, canvas.height);
       ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = "source-over";
     }
   }
 
-  objCount.textContent = objC;
-  faceCount.textContent = faceC;
-  handCount.textContent = handC;
-  poseCount.textContent = poseC;
+  faceCount.textContent = f;
+  objCount.textContent = o;
+  handCount.textContent = h;
+  poseCount.textContent = p;
 
-  requestAnimationFrame(predictLoop);
+  requestAnimationFrame(loop);
 }
 
-initModels().catch(err => {
-  status.textContent = "Init failed: " + err.message;
-  console.error(err);
-});
+init();
 </script>
 
 </body>
