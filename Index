@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detailed Hand Tracking with Skeleton Overlay</title>
+    <style>
+        body { margin: 0; padding: 0; }
+        .container { position: relative; width: 1280px; height: 720px; }
+        .input_video { display: none; }
+        .output_canvas { position: absolute; top: 0; left: 0; }
+    </style>
+    <!-- MediaPipe Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="container">
+        <video class="input_video"></video>
+        <canvas class="output_canvas" width="1280" height="720"></canvas>
+    </div>
+
+    <script>
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        // Function to handle results from MediaPipe
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Draw hand connections (bones)
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                        color: '#00FF00', // Green lines for bones
+                        lineWidth: 4
+                    });
+
+                    // Draw landmarks (joints)
+                    drawLandmarks(canvasCtx, landmarks, {
+                        color: '#FF0000', // Red dots for joints
+                        lineWidth: 2
+                    });
+
+                    // Label each landmark
+                    const labels = [
+                        'wrist', 
+                        'thumb_cmc', 'thumb_mcp', 'thumb_ip', 'thumb_tip',
+                        'index_finger_mcp', 'index_finger_pip', 'index_finger_dip', 'index_finger_tip',
+                        'middle_finger_mcp', 'middle_finger_pip', 'middle_finger_dip', 'middle_finger_tip',
+                        'ring_finger_mcp', 'ring_finger_pip', 'ring_finger_dip', 'ring_finger_tip',
+                        'pinky_mcp', 'pinky_pip', 'pinky_dip', 'pinky_tip'
+                    ];
+
+                    for (let i = 0; i < landmarks.length; i++) {
+                        const landmark = landmarks[i];
+                        const x = landmark.x * canvasElement.width;
+                        const y = landmark.y * canvasElement.height;
+
+                        canvasCtx.fillStyle = '#FFFFFF'; // White text for labels
+                        canvasCtx.font = '12px Arial';
+                        canvasCtx.fillText(labels[i], x + 10, y); // Offset label slightly to the right
+                    }
+                }
+            }
+
+            canvasCtx.restore();
+        }
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 2, // Track up to 2 hands
+            modelComplexity: 1, // Higher accuracy
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        // Start camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1280,
+            height: 720
+        });
+        camera.start();
+    </script>
+</body>
+</html>
