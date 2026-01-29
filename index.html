@@ -3,19 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>MediaPipe Tracker – Side Menu</title>
+<title>MediaPipe Tracker – Full</title>
 
 <style>
 :root{
   --bg:#0f0f1a;
-  --panel:rgba(30,30,50,.78);
+  --panel:rgba(30,30,50,.85);
   --accent:#00d4ff;
   --text:#f0f4ff;
   --bottom-inset:env(safe-area-inset-bottom,34px);
 }
-
 *{margin:0;padding:0;box-sizing:border-box}
-
 html,body{
   height:100%;
   background:var(--bg);
@@ -23,7 +21,6 @@ html,body{
   font-family:system-ui,-apple-system,sans-serif;
   overflow:hidden;
 }
-
 #video,#canvas{
   position:fixed;
   inset:0;
@@ -33,15 +30,13 @@ html,body{
 }
 #canvas{pointer-events:none}
 
-/* ────────── HUD ────────── */
-
+/* HUD */
 #hud{
   position:fixed;
   top:12px;
   left:12px;
   z-index:20;
 }
-
 .hud-card{
   background:rgba(20,20,40,.85);
   backdrop-filter:blur(10px);
@@ -52,31 +47,29 @@ html,body{
   box-shadow:0 4px 14px rgba(0,0,0,.6);
 }
 
-/* ────────── Side Menu Button ────────── */
-
+/* Menu button */
 #menu-btn{
   position:fixed;
   top:12px;
   right:12px;
   z-index:40;
-  background:rgba(20,30,50,.9);
-  border:1px solid rgba(0,212,255,.4);
+  background:rgba(20,30,50,.95);
+  border:1px solid rgba(0,212,255,.5);
   color:#fff;
-  padding:10px 14px;
-  border-radius:12px;
+  padding:10px 16px;
+  border-radius:14px;
   font-size:14px;
   cursor:pointer;
-  backdrop-filter:blur(10px);
+  backdrop-filter:blur(12px);
 }
 
-/* ────────── Side Panel ────────── */
-
-#controls-panel{
+/* Side panel */
+#controls{
   position:fixed;
   top:0;
   right:0;
   height:100%;
-  width:300px;
+  width:320px;
   background:var(--panel);
   backdrop-filter:blur(18px);
   border-left:1px solid rgba(0,212,255,.35);
@@ -86,16 +79,8 @@ html,body{
   transition:transform .35s cubic-bezier(.2,.9,.3,1);
   overflow-y:auto;
 }
-
-#controls-panel.open{
-  transform:translateX(0);
-}
-
-#controls-panel h3{
-  margin-bottom:14px;
-  font-size:18px;
-}
-
+#controls.open{transform:translateX(0)}
+#controls h3{margin-bottom:14px}
 label{
   display:flex;
   align-items:center;
@@ -103,31 +88,24 @@ label{
   margin:10px 0;
   font-size:14px;
 }
-
 input[type=checkbox]{
   transform:scale(1.3);
   accent-color:var(--accent);
 }
-
-input[type=range]{
-  width:100%;
-  accent-color:var(--accent);
-}
-
+input[type=range]{width:100%;accent-color:var(--accent)}
 select{
   width:100%;
-  padding:8px 10px;
+  padding:8px;
   border-radius:8px;
   background:#1a1a2e;
   color:var(--text);
   border:1px solid #334466;
 }
 
-/* ────────── Status ────────── */
-
+/* Status */
 #status{
   position:fixed;
-  bottom:calc(var(--bottom-inset) + 14px);
+  bottom:calc(var(--bottom-inset)+14px);
   left:50%;
   transform:translateX(-50%);
   background:rgba(20,20,40,.85);
@@ -148,16 +126,15 @@ select{
 <div id="hud">
   <div class="hud-card">FPS: <b id="fps">--</b></div>
   <div class="hud-card">
-    Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b><br>
+    Faces: <b id="faceCount">0</b> · Objects: <b id="objCount">0</b><br>
     Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
   </div>
 </div>
 
 <button id="menu-btn">☰ Menu</button>
 
-<div id="controls-panel">
+<div id="controls">
   <h3>Tracker Controls</h3>
-
   <label><input type="checkbox" id="faceDetect" checked> Face boxes</label>
   <label><input type="checkbox" id="faceMesh" checked> Face mesh</label>
   <label><input type="checkbox" id="objDetect" checked> Objects</label>
@@ -175,22 +152,22 @@ select{
   </label>
 
   <label>
-    Detection confidence
+    Confidence
     <input type="range" id="conf" min="30" max="70" value="50">
     <span id="confVal">0.50</span>
   </label>
 </div>
 
-<div id="status">Initializing…</div>
+<div id="status">Loading models…</div>
 
 <script type="module">
 import{
   FilesetResolver,
-  HandLandmarker,
-  PoseLandmarker,
-  ObjectDetector,
   FaceDetector,
   FaceLandmarker,
+  ObjectDetector,
+  PoseLandmarker,
+  HandLandmarker,
   ImageSegmenter,
   DrawingUtils
 }from"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
@@ -198,43 +175,35 @@ import{
 const video=document.getElementById("video");
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
-const drawUtils=new DrawingUtils(ctx);
+const draw=new DrawingUtils(ctx);
 
 const fpsEl=document.getElementById("fps");
-const objCount=document.getElementById("objCount");
 const faceCount=document.getElementById("faceCount");
+const objCount=document.getElementById("objCount");
 const handCount=document.getElementById("handCount");
 const poseCount=document.getElementById("poseCount");
 const status=document.getElementById("status");
 
-const menuBtn=document.getElementById("menu-btn");
-const panel=document.getElementById("controls-panel");
-
-menuBtn.onclick=()=>panel.classList.toggle("open");
-
 const state={
-  faceDetect:true,
-  faceMesh:true,
-  objDetect:true,
-  poseLand:true,
-  handLand:true,
-  segment:false,
-  facingMode:"user",
-  confidence:.5
+  faceDetect:true,faceMesh:true,objDetect:true,
+  poseLand:true,handLand:true,segment:false,
+  facingMode:"user",confidence:.5
 };
+
+document.getElementById("menu-btn").onclick=()=>
+  document.getElementById("controls").classList.toggle("open");
 
 document.querySelectorAll("input[type=checkbox]").forEach(el=>{
   el.onchange=()=>state[el.id]=el.checked;
 });
 
+document.getElementById("camera").onchange=e=>{
+  state.facingMode=e.target.value;startCamera();
+};
+
 document.getElementById("conf").oninput=e=>{
   state.confidence=e.target.value/100;
   document.getElementById("confVal").textContent=state.confidence.toFixed(2);
-};
-
-document.getElementById("camera").onchange=e=>{
-  state.facingMode=e.target.value;
-  startCamera();
 };
 
 let detectors={},running=false,last=0,frames=0;
@@ -246,7 +215,7 @@ async function init(){
 
   detectors.faceDetect=await FaceDetector.createFromOptions(vision,{
     baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"},
-    runningMode:"VIDEO",minDetectionConfidence:state.confidence
+    runningMode:"VIDEO"
   });
 
   detectors.faceMesh=await FaceLandmarker.createFromOptions(vision,{
@@ -256,7 +225,7 @@ async function init(){
 
   detectors.objDetect=await ObjectDetector.createFromOptions(vision,{
     baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite"},
-    runningMode:"VIDEO",scoreThreshold:state.confidence
+    runningMode:"VIDEO"
   });
 
   detectors.poseLand=await PoseLandmarker.createFromOptions(vision,{
@@ -287,26 +256,77 @@ async function startCamera(){
     canvas.width=video.videoWidth;
     canvas.height=video.videoHeight;
     running=true;
+    status.textContent="Tracking active";
     requestAnimationFrame(loop);
   };
 }
 
 async function loop(ts){
   if(!running)return;
-
   frames++;
-  if(ts-last>1000){
-    fpsEl.textContent=frames;
-    frames=0;last=ts;
-  }
+  if(ts-last>1000){fpsEl.textContent=frames;frames=0;last=ts;}
 
   ctx.drawImage(video,0,0,canvas.width,canvas.height);
   const now=performance.now();
 
+  let f=0,o=0,h=0,p=0;
+
   if(state.faceDetect){
     const r=await detectors.faceDetect.detectForVideo(video,now);
-    faceCount.textContent=r.detections.length;
+    f=r.detections.length;
+    for(const d of r.detections)
+      ctx.strokeRect(d.boundingBox.originX,d.boundingBox.originY,d.boundingBox.width,d.boundingBox.height);
   }
+
+  if(state.faceMesh){
+    const r=await detectors.faceMesh.detectForVideo(video,now);
+    r.faceLandmarks.forEach(l=>{
+      draw.drawLandmarks(l,{color:"#ffcc00",radius:1.5});
+      draw.drawConnectors(l,FaceLandmarker.FACE_CONNECTIONS,{color:"#ffaa00"});
+    });
+  }
+
+  if(state.objDetect){
+    const r=await detectors.objDetect.detectForVideo(video,now);
+    o=r.detections.length;
+    r.detections.forEach(d=>{
+      ctx.strokeStyle="#00ff9d";
+      ctx.lineWidth=4;
+      ctx.strokeRect(d.boundingBox.originX,d.boundingBox.originY,d.boundingBox.width,d.boundingBox.height);
+    });
+  }
+
+  if(state.poseLand){
+    const r=await detectors.poseLand.detectForVideo(video,now);
+    p=r.landmarks.length;
+    r.landmarks.forEach(l=>{
+      draw.drawLandmarks(l,{color:"#ff3366"});
+      draw.drawConnectors(l,PoseLandmarker.POSE_CONNECTIONS,{color:"#33ff99"});
+    });
+  }
+
+  if(state.handLand){
+    const r=await detectors.handLand.detectForVideo(video,now);
+    h=r.landmarks.length;
+    r.landmarks.forEach(l=>{
+      draw.drawLandmarks(l,{color:"#ffff66"});
+      draw.drawConnectors(l,HandLandmarker.HAND_CONNECTIONS,{color:"#00ffff"});
+    });
+  }
+
+  if(state.segment){
+    const r=await detectors.segment.segmentForVideo(video,now);
+    if(r.categoryMask){
+      ctx.globalAlpha=.35;
+      ctx.drawImage(r.categoryMask.getAsCanvasImageSource(),0,0,canvas.width,canvas.height);
+      ctx.globalAlpha=1;
+    }
+  }
+
+  faceCount.textContent=f;
+  objCount.textContent=o;
+  handCount.textContent=h;
+  poseCount.textContent=p;
 
   requestAnimationFrame(loop);
 }
