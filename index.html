@@ -2,47 +2,56 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Dynamic Island Tracker</title>
 
 <style>
-:root{
-  --bg:#0f0f1a;
-  --panel:rgba(30,30,50,.78);
-  --accent:#00d4ff;
-  --text:#f0f4ff;
+:root {
+  --bg: #0f0f1a;
+  --panel: rgba(30,30,50,.78);
+  --accent: #00d4ff;
+  --text: #f0f4ff;
 
-  --island-width:160px;
-  --island-height:38px;
-  --glow:22px;
+  --island-width: 160px;
+  --island-height: 38px;
 
-  --bottom-inset:env(safe-area-inset-bottom,34px);
+  /* 🔧 Apple lies — this fixes it */
+  --island-offset: -7px;
+
+  --glow: 22px;
+  --bottom-inset: env(safe-area-inset-bottom, 34px);
 }
 
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
   height:100%;
   background:var(--bg);
   color:var(--text);
-  font-family:-apple-system,system-ui,sans-serif;
+  font-family:-apple-system, system-ui, sans-serif;
   overflow:hidden;
 }
 
-#video,#canvas{
+#video, #canvas {
   position:fixed;
   inset:0;
   width:100%;
   height:100%;
   object-fit:cover;
 }
-#canvas{pointer-events:none}
 
-/* ---------- Dynamic Island ---------- */
+#canvas { pointer-events:none; }
+
+/* ────────── Dynamic Island ────────── */
 
 #island-zone,
-#island-outline{
+#island-outline {
   position:fixed;
-  top:calc(env(safe-area-inset-top)/2 - var(--island-height)/2);
+  top: calc(
+    env(safe-area-inset-top) / 2
+    - var(--island-height) / 2
+    + var(--island-offset)
+  );
   left:50%;
   transform:translateX(-50%);
   width:var(--island-width);
@@ -50,38 +59,38 @@ html,body{
   border-radius:999px;
 }
 
-#island-zone{
+#island-zone {
   z-index:120;
 }
 
-#island-outline{
+#island-outline {
   z-index:110;
   pointer-events:none;
   border:2px solid var(--accent);
-  opacity:.8;
+  opacity:.85;
   box-shadow:
     0 0 var(--glow) rgba(0,212,255,.55),
     inset 0 0 calc(var(--glow)/2) rgba(0,212,255,.45);
   transition:.4s ease;
 }
 
-#island-outline.menu-open{
+#island-outline.menu-open {
   opacity:1;
   box-shadow:
     0 0 calc(var(--glow)*1.8) var(--accent),
-    inset 0 0 var(--glow) rgba(0,212,255,.7);
+    inset 0 0 var(--glow) rgba(0,212,255,.75);
 }
 
-#island-outline.hidden{
+#island-outline.hidden {
   opacity:0;
   transform:translateX(-50%) scale(.85);
 }
 
-/* ---------- Controls ---------- */
+/* ────────── Controls ────────── */
 
-#controls{
+#controls {
   position:fixed;
-  top:calc(env(safe-area-inset-top)/2 + 8px);
+  top: calc(env(safe-area-inset-top) / 2 + 10px);
   right:10px;
   width:240px;
   background:var(--panel);
@@ -96,18 +105,18 @@ html,body{
   z-index:100;
 }
 
-#controls.open{
+#controls.open {
   transform:translateY(0) scale(1);
   opacity:1;
   pointer-events:auto;
 }
 
-#controls h3{
+#controls h3 {
   text-align:center;
   margin-bottom:10px;
 }
 
-label{
+label {
   display:flex;
   align-items:center;
   gap:8px;
@@ -115,21 +124,21 @@ label{
   margin:8px 0;
 }
 
-input[type=checkbox]{
+input[type=checkbox] {
   transform:scale(1.2);
   accent-color:var(--accent);
 }
 
-input[type=range]{
+input[type=range] {
   width:100%;
   accent-color:var(--accent);
 }
 
-/* ---------- Status ---------- */
+/* ────────── Status ────────── */
 
-#status{
+#status {
   position:fixed;
-  bottom:calc(var(--bottom-inset)+12px);
+  bottom:calc(var(--bottom-inset) + 12px);
   left:50%;
   transform:translateX(-50%);
   background:rgba(20,20,40,.9);
@@ -144,101 +153,350 @@ input[type=range]{
 
 <body>
 
-<video id="video" autoplay muted playsinline></video>
+<video id="video" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
 
 <div id="island-zone"></div>
 <div id="island-outline"></div>
 
 <div id="controls">
-  <h3>Tracker</h3>
-  <label><input type="checkbox" checked> Face detection</label>
-  <label>Confidence
-    <input type="range" id="conf" min="30" max="70" value="50">
+  <h3>Tracker Controls</h3>
+  <label><input type="checkbox" id="faceDetect" checked> Face boxes</label>
+  <label><input type="checkbox" id="faceMesh" checked> Detailed face mesh</label>
+  <label><input type="checkbox" id="objDetect" checked> Objects & people</label>
+  <label><input type="checkbox" id="poseLand" checked> Body skeleton</label>
+  <label><input type="checkbox" id="handLand" checked> Detailed hands</label>
+  <label><input type="checkbox" id="segment"> Person mask overlay</label>
+
+  <hr style="margin:12px 0; border-color:#334466;">
+
+  <label>Camera
+    <select id="camera">
+      <option value="user" selected>Front (selfie)</option>
+      <option value="environment">Back</option>
+    </select>
+  </label>
+
+  <label>
+    Detection confidence
+    <input type="range" id="conf" min="30" max="70" value="50" step="1">
     <span id="confVal">0.50</span>
   </label>
 </div>
 
-<div id="status">Initializing…</div>
+<div id="hud">
+  <div class="hud-card">FPS: <b id="fps">--</b></div>
+  <div class="hud-card">
+    Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b><br>
+    Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
+  </div>
+</div>
+
+<div id="status">Initializing models…</div>
 
 <script type="module">
 import {
   FilesetResolver,
-  FaceDetector
+  HandLandmarker,
+  PoseLandmarker,
+  ObjectDetector,
+  FaceDetector,
+  FaceLandmarker,
+  ImageSegmenter,
+  DrawingUtils
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
 const islandZone = document.getElementById("island-zone");
 const islandOutline = document.getElementById("island-outline");
 const controls = document.getElementById("controls");
-const status = document.getElementById("status");
-const conf = document.getElementById("conf");
+const fpsEl = document.getElementById("fps");
+const objCount = document.getElementById("objCount");
+const faceCount = document.getElementById("faceCount");
+const handCount = document.getElementById("handCount");
+const poseCount = document.getElementById("poseCount");
+const confSlider = document.getElementById("conf");
 const confVal = document.getElementById("confVal");
-const video = document.getElementById("video");
+const cameraSelect = document.getElementById("camera");
 
-let menuOpen=false;
-let lastSeenFace=0;
-let fps=0,frames=0,last=performance.now();
-let detector;
+let detectors = {};
+let running = false;
+const drawUtils = new DrawingUtils(ctx);
 
-/* ---- Tap Dynamic Island ---- */
-islandZone.onclick=()=>{
-  menuOpen=!menuOpen;
-  controls.classList.toggle("open",menuOpen);
-  islandOutline.classList.toggle("menu-open",menuOpen);
+const state = {
+  faceDetect: true,
+  faceMesh: true,
+  objDetect: true,
+  poseLand: true,
+  handLand: true,
+  segment: false,
+  facingMode: "user",
+  confidence: 0.50
+};
+
+let menuOpen = false;
+let lastTs = 0, frameCt = 0;
+
+// Toggle menu on island tap
+islandZone.onclick = () => {
+  menuOpen = !menuOpen;
+  controls.classList.toggle("open", menuOpen);
+  islandOutline.classList.toggle("menu-open", menuOpen);
   navigator.vibrate?.(10);
 };
 
-/* ---- Confidence ---- */
-conf.oninput=e=>{
-  confVal.textContent=(e.target.value/100).toFixed(2);
-};
-
-/* ---- Camera ---- */
-navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}})
-.then(s=>video.srcObject=s);
-
-/* ---- Init MediaPipe ---- */
-const vision = await FilesetResolver.forVisionTasks(
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-);
-
-detector = await FaceDetector.createFromOptions(vision,{
-  baseOptions:{
-    modelAssetPath:
-    "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
-  },
-  runningMode:"VIDEO",
-  minDetectionConfidence:.5
+// Bind controls
+document.querySelectorAll('#controls input[type=checkbox]').forEach(el => {
+  el.onchange = () => state[el.id] = el.checked;
 });
 
-status.textContent="Ready";
+confSlider.oninput = e => {
+  state.confidence = e.target.value / 100;
+  confVal.textContent = state.confidence.toFixed(2);
+  updateDetectorOptions();
+};
 
-/* ---- Main loop ---- */
-function loop(ts){
-  frames++;
-  if(ts-last>1000){
-    fps=frames;
-    frames=0;
-    last=ts;
+cameraSelect.onchange = e => {
+  state.facingMode = e.target.value;
+  restartCamera();
+};
 
-    const glow=14+Math.min(30,fps*.6)+(conf.value/100)*20;
-    document.documentElement.style.setProperty("--glow",glow+"px");
+async function initModels() {
+  status.textContent = "Loading models...";
+
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+
+  const conf = state.confidence;
+
+  detectors.faceDetect = await FaceDetector.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite" },
+    runningMode: "VIDEO", minDetectionConfidence: conf
+  });
+
+  detectors.faceMesh = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" },
+    runningMode: "VIDEO", numFaces: 3
+  });
+
+  detectors.objDetect = await ObjectDetector.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite" },
+    scoreThreshold: conf, runningMode: "VIDEO"
+  });
+
+  detectors.poseLand = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" },
+    runningMode: "VIDEO", numPoses: 2
+  });
+
+  detectors.handLand = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" },
+    runningMode: "VIDEO", numHands: 2
+  });
+
+  detectors.segment = await ImageSegmenter.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmentation/float16/1/selfie_segmentation.tflite" },
+    runningMode: "VIDEO", outputCategoryMask: true
+  });
+
+  status.textContent = "Ready – tap Dynamic Island to toggle menu";
+  setTimeout(() => status.classList.add("faded"), 4000);
+  startCamera();
+}
+
+async function startCamera() {
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: state.facingMode,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    });
+
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      status.textContent = "Tracking active";
+      running = true;
+      requestAnimationFrame(predictLoop);
+    };
+  } catch (err) {
+    status.textContent = "Camera error: " + err.message;
+  }
+}
+
+function restartCamera() {
+  running = false;
+  setTimeout(startCamera, 300);
+}
+
+function updateDetectorOptions() {
+  const c = state.confidence;
+  detectors.faceDetect?.setOptions({ minDetectionConfidence: c });
+  detectors.objDetect?.setOptions({ scoreThreshold: c });
+  detectors.poseLand?.setOptions({ minPoseDetectionConfidence: c });
+  detectors.handLand?.setOptions({ minHandDetectionConfidence: c, minTrackingConfidence: c });
+}
+
+async function predictLoop(ts) {
+  if (!running) return;
+
+  frameCt++;
+  if (ts - lastTs > 1000) {
+    fpsEl.textContent = Math.round(frameCt * 1000 / (ts - lastTs));
+    lastTs = ts; frameCt = 0;
   }
 
-  if(video.readyState>=2){
-    const r=detector.detectForVideo(video,performance.now());
-    if(r.detections.length){
-      lastSeenFace=ts;
-      islandOutline.classList.remove("hidden");
-    }else if(ts-lastSeenFace>1500){
-      islandOutline.classList.add("hidden");
-      controls.classList.remove("open");
-      menuOpen=false;
+  const isMirrored = state.facingMode === "user";
+
+  ctx.save();
+  if (isMirrored) {
+    ctx.scale(-1, 1);
+    ctx.translate(-canvas.width, 0);
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const now = performance.now();
+
+  let objC = 0, faceC = 0, handC = 0, poseC = 0;
+
+  if (state.faceDetect && detectors.faceDetect) {
+    const r = await detectors.faceDetect.detectForVideo(video, now);
+    faceC = r.detections.length;
+    for (const d of r.detections) {
+      let x = d.boundingBox.originX;
+      let y = d.boundingBox.originY;
+      let w = d.boundingBox.width;
+      let h = d.boundingBox.height;
+      if (isMirrored) x = canvas.width - (x + w);
+
+      ctx.strokeStyle = "rgba(0,212,255,0.9)";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x, y, w, h);
+
+      ctx.shadowColor = "rgba(0,212,255,0.7)";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "rgba(0,40,60,0.7)";
+      ctx.fillRect(x + 4, y + 4, 100, 22);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px Arial";
+      ctx.fillText(`Face ${(d.confidence*100)|0}%`, x + 8, y + 18);
     }
   }
-  requestAnimationFrame(loop);
+
+  if (state.faceMesh && detectors.faceMesh) {
+    const r = await detectors.faceMesh.detectForVideo(video, now);
+    for (const lm of r.faceLandmarks) {
+      const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z }));
+      drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
+      drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
+    }
+  }
+
+  if (state.objDetect && detectors.objDetect) {
+    const r = await detectors.objDetect.detectForVideo(video, now);
+    objC = r.detections.length;
+    for (const d of r.detections) {
+      let x = d.boundingBox.originX;
+      let y = d.boundingBox.originY;
+      let w = d.boundingBox.width;
+      let h = d.boundingBox.height;
+      if (isMirrored) x = canvas.width - (x + w);
+
+      const cat = d.categories[0];
+      const isPerson = cat.categoryName.toLowerCase().includes("person");
+      ctx.strokeStyle = isPerson ? "#ff4d94" : "#00ff9d";
+      ctx.lineWidth = 5;
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 15;
+      ctx.strokeRect(x, y, w, h);
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = "rgba(10,20,30,0.75)";
+      ctx.fillRect(x + 4, y + 4, 130, 24);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px Arial";
+      ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, x + 8, y + 18);
+    }
+  }
+
+  if (state.poseLand && detectors.poseLand) {
+    const r = await detectors.poseLand.detectForVideo(video, now);
+    poseC = r.landmarks.length;
+    for (const lm of r.landmarks) {
+      const mirroredLm = lm.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility }));
+      drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
+      drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
+    }
+  }
+
+  if (state.handLand && detectors.handLand) {
+    const r = await detectors.handLand.detectForVideo(video, now);
+    handC = r.landmarks.length;
+    for (let i = 0; i < r.landmarks.length; i++) {
+      const lm = r.landmarks[i].map(p => ({
+        x: isMirrored ? 1 - p.x : p.x,
+        y: p.y,
+        z: p.z,
+        visibility: p.visibility,
+        presence: p.presence
+      }));
+
+      drawUtils.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2.5, radius: 6 });
+      drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 6 });
+
+      const handed = r.handedness[i]?.[0];
+      if (handed) {
+        const wrist = lm[0];
+        const wx = wrist.x * canvas.width;
+        const wy = wrist.y * canvas.height;
+        ctx.shadowColor = "#00ffff";
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = "#000000cc";
+        ctx.fillRect(wx - 50, wy - 35, 100, 28);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 15px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(handed.categoryName, wx, wy - 18);
+        ctx.textAlign = "left";
+      }
+    }
+  }
+
+  if (state.segment && detectors.segment) {
+    const r = await detectors.segment.segmentForVideo(video, now);
+    if (r.categoryMask) {
+      ctx.globalAlpha = 0.4;
+      ctx.globalCompositeOperation = "screen";
+      ctx.drawImage(r.categoryMask.getAsCanvasImageSource(), 0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+
+  objCount.textContent = objC;
+  faceCount.textContent = faceC;
+  handCount.textContent = handC;
+  poseCount.textContent = poseC;
+
+  requestAnimationFrame(predictLoop);
 }
-requestAnimationFrame(loop);
+
+initModels().catch(err => {
+  status.textContent = "Init failed: " + err.message;
+  console.error(err);
+});
 </script>
 
 </body>
