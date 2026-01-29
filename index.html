@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Enhanced MediaPipe Tracker</title>
+  <title>MediaPipe Tracker – Fixed Mirroring & Minimizable Controls</title>
   <style>
     :root {
       --bg: #0f0f1a;
-      --panel: rgba(30, 30, 50, 0.65);
+      --panel: rgba(30, 30, 50, 0.7);
       --accent: #00d4ff;
       --text: #f0f4ff;
-      --glow: rgba(0, 212, 255, 0.4);
+      --glow: rgba(0, 212, 255, 0.35);
     }
     body {
       margin:0; padding:0; background:var(--bg); color:var(--text);
@@ -18,71 +18,100 @@
       overflow:hidden; touch-action:manipulation;
     }
     #video, #canvas {
-      position:absolute; inset:0; width:100%; height:100%;
-      object-fit:cover;
+      position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
     }
     #canvas { pointer-events:none; }
-    #ui {
-      position:fixed; inset:0; pointer-events:none;
-    }
+
     #hud {
-      position:absolute; top:12px; left:12px; z-index:100;
-      display:flex; flex-direction:column; gap:8px;
-      pointer-events:auto;
+      position:absolute; top:12px; left:12px; z-index:90;
+      pointer-events:none;
     }
     .hud-card {
-      background:rgba(20,20,40,0.7);
+      background:rgba(20,20,40,0.75);
       backdrop-filter:blur(10px);
       border:1px solid rgba(100,180,255,0.25);
-      border-radius:12px; padding:10px 14px;
-      font-size:13px; line-height:1.4;
-      box-shadow:0 4px 15px rgba(0,0,0,0.5);
+      border-radius:10px; padding:8px 12px;
+      font-size:13px; margin-bottom:6px;
+      box-shadow:0 3px 12px rgba(0,0,0,0.5);
     }
-    #controls {
+
+    #controls-wrapper {
       position:absolute; top:12px; right:12px; z-index:100;
-      background:var(--panel); backdrop-filter:blur(16px);
-      border:1px solid rgba(100,180,255,0.3);
-      border-radius:16px; padding:16px 20px;
-      max-width:280px; max-height:88vh; overflow-y:auto;
-      box-shadow:0 8px 32px rgba(0,0,0,0.6);
-      pointer-events:auto; transition:opacity 0.4s;
     }
-    #controls.hidden { opacity:0.08; pointer-events:none; }
-    #controls h3 { margin:0 0 14px; font-size:17px; }
-    #controls label {
+    #controls-toggle {
+      width:48px; height:48px; border-radius:50%;
+      background:var(--panel);
+      backdrop-filter:blur(12px);
+      border:1px solid rgba(0,212,255,0.4);
+      color:var(--accent);
+      font-size:24px; font-weight:bold;
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none;
+      box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      transition: all 0.25s ease;
+    }
+    #controls-toggle:hover { transform:scale(1.08); }
+    #controls-toggle.minimized { background:rgba(40,40,70,0.85); }
+
+    #controls-panel {
+      background:var(--panel);
+      backdrop-filter:blur(16px);
+      border:1px solid rgba(0,212,255,0.35);
+      border-radius:16px;
+      padding:16px 20px;
+      margin-top:12px;
+      width:260px;
+      max-height:80vh; overflow-y:auto;
+      box-shadow:0 10px 40px rgba(0,0,0,0.7);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    #controls-panel.hidden {
+      opacity:0;
+      transform:translateY(-20px);
+      pointer-events:none;
+    }
+
+    #controls-panel h3 { margin:0 0 14px; font-size:17px; }
+    #controls-panel label {
       display:flex; align-items:center; gap:10px;
       margin:10px 0; font-size:14px; cursor:pointer;
     }
-    input[type=checkbox] { transform:scale(1.4); accent-color:var(--accent); }
+    input[type=checkbox] { transform:scale(1.35); accent-color:var(--accent); }
     input[type=range] { width:100%; accent-color:var(--accent); }
-    select { padding:8px 12px; border-radius:8px; background:#1a1a2e; color:var(--text); border:1px solid #334466; }
-    button { padding:8px 14px; border:none; border-radius:8px; background:#334466; color:white; cursor:pointer; }
-    button:hover { background:#446688; }
+    select {
+      padding:8px 12px; border-radius:8px;
+      background:#1a1a2e; color:var(--text);
+      border:1px solid #334466; width:100%;
+    }
+
     #status {
       position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
-      background:rgba(20,20,40,0.8); backdrop-filter:blur(10px);
-      padding:10px 20px; border-radius:999px; font-size:15px;
-      border:1px solid rgba(0,180,255,0.3); pointer-events:none;
-      transition:opacity 1.2s; opacity:1;
+      background:rgba(20,20,40,0.85); backdrop-filter:blur(12px);
+      padding:10px 24px; border-radius:999px;
+      border:1px solid rgba(0,180,255,0.3);
+      font-size:15px; white-space:nowrap;
+      transition:opacity 1.5s; pointer-events:none;
     }
     #status.faded { opacity:0; }
   </style>
 </head>
 <body>
-  <div id="ui">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas"></canvas>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
 
-    <div id="hud">
-      <div class="hud-card">FPS: <b id="fps">--</b></div>
-      <div class="hud-card">
-        Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b><br>
-        Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
-      </div>
+  <div id="hud">
+    <div class="hud-card">FPS: <b id="fps">--</b></div>
+    <div class="hud-card">
+      Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b><br>
+      Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
     </div>
+  </div>
 
-    <div id="controls">
+  <div id="controls-wrapper">
+    <div id="controls-toggle" onclick="toggleControls()">–</div>
+    <div id="controls-panel">
       <h3>Tracker Controls</h3>
+
       <label><input type="checkbox" id="faceDetect" checked> Face boxes</label>
       <label><input type="checkbox" id="faceMesh" checked> Detailed face mesh</label>
       <label><input type="checkbox" id="objDetect" checked> Objects & people</label>
@@ -99,19 +128,15 @@
         </select>
       </label>
 
-      <label title="Lower = more sensitive, more false positives">
+      <label title="Lower = more detections, higher false positives">
         Detection confidence
         <input type="range" id="conf" min="30" max="70" value="50" step="1">
         <span id="confVal">0.50</span>
       </label>
-
-      <div style="margin-top:16px; text-align:center; font-size:13px; opacity:0.8;">
-        Double-tap screen to hide/show panel
-      </div>
     </div>
-
-    <div id="status">Initializing models…</div>
   </div>
+
+  <div id="status">Initializing models…</div>
 
   <script type="module">
     import {
@@ -132,7 +157,7 @@
 
     let detectors = {};
     let running = false;
-    const draw = new DrawingUtils(ctx);
+    const drawUtils = new DrawingUtils(ctx);
 
     const state = {
       faceDetect: true,
@@ -145,25 +170,34 @@
       confidence: 0.50
     };
 
-    // Bindings
-    document.querySelectorAll('#controls input[type=checkbox]').forEach(el => {
+    // ── Controls toggle ───────────────────────────────────────────────────────
+    function toggleControls() {
+      const panel = document.getElementById("controls-panel");
+      const toggleBtn = document.getElementById("controls-toggle");
+      panel.classList.toggle("hidden");
+      toggleBtn.textContent = panel.classList.contains("hidden") ? "+" : "–";
+      toggleBtn.classList.toggle("minimized", panel.classList.contains("hidden"));
+    }
+
+    // Bind checkboxes & sliders
+    document.querySelectorAll('#controls-panel input[type=checkbox]').forEach(el => {
       el.onchange = () => state[el.id] = el.checked;
     });
+
     document.getElementById("conf").oninput = e => {
       state.confidence = e.target.value / 100;
       document.getElementById("confVal").textContent = state.confidence.toFixed(2);
-      updateOptions();
+      updateDetectorOptions();
     };
+
     document.getElementById("camera").onchange = e => {
       state.facingMode = e.target.value;
       restartCamera();
     };
 
-    // Double-tap to toggle controls
-    canvas.ondblclick = () => document.getElementById("controls").classList.toggle("hidden");
+    async function initModels() {
+      status.textContent = "Loading WASM & models…";
 
-    async function init() {
-      status.textContent = "Loading core...";
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
@@ -200,13 +234,15 @@
         runningMode: "VIDEO", outputCategoryMask: true
       });
 
-      status.textContent = "Models ready – starting camera";
-      setTimeout(() => status.classList.add("faded"), 4000);
+      status.textContent = "Models loaded – opening camera";
+      setTimeout(() => status.classList.add("faded"), 3500);
       startCamera();
     }
 
     async function startCamera() {
-      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+      }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -216,16 +252,17 @@
             height: { ideal: 1080 }
           }
         });
+
         video.srcObject = stream;
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           status.textContent = "Tracking active";
           running = true;
-          requestAnimationFrame(loop);
+          requestAnimationFrame(predictLoop);
         };
-      } catch (e) {
-        status.textContent = "Camera error: " + e.message;
+      } catch (err) {
+        status.textContent = "Camera failed: " + err.message;
       }
     }
 
@@ -234,130 +271,160 @@
       setTimeout(startCamera, 400);
     }
 
-    function updateOptions() {
+    function updateDetectorOptions() {
       const c = state.confidence;
       detectors.faceDetect?.setOptions({ minDetectionConfidence: c });
       detectors.objDetect?.setOptions({ scoreThreshold: c });
       detectors.poseLand?.setOptions({ minPoseDetectionConfidence: c });
-      detectors.handLand?.setOptions({
-        minHandDetectionConfidence: c,
-        minTrackingConfidence: c
-      });
+      detectors.handLand?.setOptions({ minHandDetectionConfidence: c, minTrackingConfidence: c });
     }
 
-    let last = 0, frames = 0;
-    async function loop(ts) {
+    let lastTs = 0, frameCt = 0;
+    async function predictLoop(ts) {
       if (!running) return;
 
-      frames++;
-      if (ts - last > 1000) {
-        document.getElementById("fps").textContent = Math.round(frames * 1000 / (ts - last));
-        last = ts; frames = 0;
+      frameCt++;
+      if (ts - lastTs > 1000) {
+        document.getElementById("fps").textContent = Math.round(frameCt * 1000 / (ts - lastTs));
+        lastTs = ts; frameCt = 0;
       }
 
+      const isMirrored = state.facingMode === "user";
+
+      // Draw mirrored video if front cam
       ctx.save();
-      if (state.facingMode === "user") {
+      if (isMirrored) {
         ctx.scale(-1, 1);
         ctx.translate(-canvas.width, 0);
       }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       ctx.restore();
 
-      const t = performance.now();
+      const now = performance.now();
 
-      let objC = 0, faceC = 0, handC = 0, poseC = 0;
+      // ── All detections run on raw video (unmirrored) ───────────────────────
+      // Then we mirror coordinates when drawing
 
       // Face boxes
-      if (state.faceDetect) {
-        const r = await detectors.faceDetect.detectForVideo(video, t);
-        faceC += r.detections.length;
+      if (state.faceDetect && detectors.faceDetect) {
+        const r = await detectors.faceDetect.detectForVideo(video, now);
         for (const d of r.detections) {
-          const b = d.boundingBox;
+          let x = d.boundingBox.originX;
+          let y = d.boundingBox.originY;
+          let w = d.boundingBox.width;
+          let h = d.boundingBox.height;
+
+          if (isMirrored) x = canvas.width - (x + w);
+
           ctx.strokeStyle = "rgba(0,212,255,0.9)";
           ctx.lineWidth = 4;
-          ctx.strokeRect(b.originX, b.originY, b.width, b.height);
+          ctx.strokeRect(x, y, w, h);
+
           ctx.shadowColor = "rgba(0,212,255,0.7)";
           ctx.shadowBlur = 12;
           ctx.fillStyle = "rgba(0,40,60,0.7)";
-          ctx.fillRect(b.originX + 4, b.originY + 4, 120, 26);
+          ctx.fillRect(x + 4, y + 4, 120, 26);
           ctx.shadowBlur = 0;
           ctx.fillStyle = "#ffffff";
           ctx.font = "bold 15px Arial";
-          ctx.fillText(`Face ${(d.confidence*100)|0}%`, b.originX + 10, b.originY + 22);
+          ctx.fillText(`Face ${(d.confidence*100)|0}%`, x + 10, y + 22);
         }
       }
 
       // Face mesh
-      if (state.faceMesh) {
-        const r = await detectors.faceMesh.detectForVideo(video, t);
+      if (state.faceMesh && detectors.faceMesh) {
+        const r = await detectors.faceMesh.detectForVideo(video, now);
         for (const lm of r.faceLandmarks) {
-          draw.drawLandmarks(lm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
-          draw.drawConnectors(lm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
+          const mirroredLm = lm.map(p => ({
+            x: isMirrored ? 1 - p.x : p.x,
+            y: p.y,
+            z: p.z
+          }));
+          drawUtils.drawLandmarks(mirroredLm, { color: "#ffcc00", lineWidth: 1.5, radius: 2 });
+          drawUtils.drawConnectors(mirroredLm, FaceLandmarker.FACE_CONNECTIONS, { color: "rgba(255,180,0,0.6)", lineWidth: 2.5 });
         }
       }
 
       // Objects
-      if (state.objDetect) {
-        const r = await detectors.objDetect.detectForVideo(video, t);
-        objC = r.detections.length;
+      if (state.objDetect && detectors.objDetect) {
+        const r = await detectors.objDetect.detectForVideo(video, now);
         for (const d of r.detections) {
-          const b = d.boundingBox;
+          let x = d.boundingBox.originX;
+          let y = d.boundingBox.originY;
+          let w = d.boundingBox.width;
+          let h = d.boundingBox.height;
+
+          if (isMirrored) x = canvas.width - (x + w);
+
           const cat = d.categories[0];
           const isPerson = cat.categoryName.toLowerCase().includes("person");
           ctx.strokeStyle = isPerson ? "#ff4d94" : "#00ff9d";
           ctx.lineWidth = 5;
           ctx.shadowColor = ctx.strokeStyle;
           ctx.shadowBlur = 15;
-          ctx.strokeRect(b.originX, b.originY, b.width, b.height);
+          ctx.strokeRect(x, y, w, h);
           ctx.shadowBlur = 0;
+
           ctx.fillStyle = "rgba(10,20,30,0.75)";
-          ctx.fillRect(b.originX + 6, b.originY + 6, 140, 28);
+          ctx.fillRect(x + 6, y + 6, 140, 28);
           ctx.fillStyle = "#ffffff";
           ctx.font = "bold 16px Arial";
-          ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, b.originX + 12, b.originY + 24);
+          ctx.fillText(`${cat.categoryName} ${(cat.score*100)|0}%`, x + 12, y + 24);
         }
       }
 
       // Pose
-      if (state.poseLand) {
-        const r = await detectors.poseLand.detectForVideo(video, t);
-        poseC = r.landmarks.length;
+      if (state.poseLand && detectors.poseLand) {
+        const r = await detectors.poseLand.detectForVideo(video, now);
         for (const lm of r.landmarks) {
-          draw.drawLandmarks(lm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
-          draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
+          const mirroredLm = lm.map(p => ({
+            x: isMirrored ? 1 - p.x : p.x,
+            y: p.y,
+            z: p.z,
+            visibility: p.visibility
+          }));
+          drawUtils.drawLandmarks(mirroredLm, { color: "#ff3366", lineWidth: 2.5, radius: 5 });
+          drawUtils.drawConnectors(mirroredLm, PoseLandmarker.POSE_CONNECTIONS, { color: "#33ff99", lineWidth: 6 });
         }
       }
 
       // Hands
-      if (state.handLand) {
-        const r = await detectors.handLand.detectForVideo(video, t);
-        handC = r.landmarks.length;
+      if (state.handLand && detectors.handLand) {
+        const r = await detectors.handLand.detectForVideo(video, now);
         for (let i = 0; i < r.landmarks.length; i++) {
-          const lm = r.landmarks[i];
-          const h = r.handedness[i]?.[0];
-          draw.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2.5, radius: 6 });
-          draw.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 6 });
-          if (h) {
-            const w = lm[0];
-            const x = w.x * canvas.width;
-            const y = w.y * canvas.height;
+          const lm = r.landmarks[i].map(p => ({
+            x: isMirrored ? 1 - p.x : p.x,
+            y: p.y,
+            z: p.z,
+            visibility: p.visibility,
+            presence: p.presence
+          }));
+
+          drawUtils.drawLandmarks(lm, { color: "#ffff66", lineWidth: 2.5, radius: 6 });
+          drawUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color: "#00ffff", lineWidth: 6 });
+
+          const handed = r.handedness[i]?.[0];
+          if (handed) {
+            const wrist = lm[0];
+            const wx = wrist.x * canvas.width;
+            const wy = wrist.y * canvas.height;
             ctx.shadowColor = "#00ffff";
             ctx.shadowBlur = 10;
             ctx.fillStyle = "#000000cc";
-            ctx.fillRect(x - 50, y - 35, 100, 28);
+            ctx.fillRect(wx - 50, wy - 35, 100, 28);
             ctx.shadowBlur = 0;
             ctx.fillStyle = "#ffffff";
             ctx.font = "bold 15px Arial";
             ctx.textAlign = "center";
-            ctx.fillText(h.categoryName, x, y - 18);
+            ctx.fillText(handed.categoryName, wx, wy - 18);
             ctx.textAlign = "left";
           }
         }
       }
 
-      // Segmentation mask
-      if (state.segment) {
-        const r = await detectors.segment.segmentForVideo(video, t);
+      // Segmentation
+      if (state.segment && detectors.segment) {
+        const r = await detectors.segment.segmentForVideo(video, now);
         if (r.categoryMask) {
           ctx.globalAlpha = 0.4;
           ctx.globalCompositeOperation = "screen";
@@ -367,19 +434,13 @@
         }
       }
 
-      // Update HUD
-      document.getElementById("objCount").textContent = objC;
-      document.getElementById("faceCount").textContent = faceC;
-      document.getElementById("handCount").textContent = handC;
-      document.getElementById("poseCount").textContent = poseC;
-
-      requestAnimationFrame(loop);
+      requestAnimationFrame(predictLoop);
     }
 
-    // Start
-    init().catch(e => {
-      status.textContent = "Error: " + e.message;
-      console.error(e);
+    // ── Start ────────────────────────────────────────────────────────────────
+    initModels().catch(err => {
+      status.textContent = "Init failed: " + err.message;
+      console.error(err);
     });
   </script>
 </body>
