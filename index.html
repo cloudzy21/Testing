@@ -14,6 +14,8 @@
 
   --island-width: 160px;
   --island-height: 38px;
+
+  /* 🔧 Apple lies — this fixes it */
   --island-offset: -7px;
 
   --glow: 22px;
@@ -193,6 +195,20 @@ input[type=range] {
     </select>
   </label>
 
+  <label>Resolution
+    <select id="resolution">
+      <option value="low" selected>Low (fast)</option>
+      <option value="medium">Medium</option>
+      <option value="high">High (slow)</option>
+    </select>
+  </label>
+
+  <label>
+    Zoom
+    <input type="range" id="zoom" min="1" max="5" value="1" step="0.1">
+    <span id="zoomVal">1.0x</span>
+  </label>
+
   <label>
     Confidence
     <input type="range" id="conf" min="30" max="70" value="50">
@@ -203,8 +219,8 @@ input[type=range] {
 <div id="hud">
   <div class="hud-card">FPS: <b id="fps">--</b></div>
   <div class="hud-card">
-    Faces: <b id="faceCount">0</b> · Objects: <b id="objCount">0</b><br>
-    Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b>
+    <span>Objects: <b id="objCount">0</b> · Faces: <b id="faceCount">0</b></span><br>
+    <span>Hands: <b id="handCount">0</b> · Poses: <b id="poseCount">0</b></span>
   </div>
 </div>
 
@@ -242,7 +258,9 @@ const state = {
   handLand: true,
   segment: false,
   facingMode: "user",
-  confidence: 0.5
+  confidence: 0.5,
+  resolution: "low",
+  zoom: 1.0
 };
 
 document.getElementById("island-zone").onclick = () => {
@@ -257,6 +275,17 @@ document.querySelectorAll("input[type=checkbox]").forEach(el => {
 document.getElementById("camera").onchange = e => {
   state.facingMode = e.target.value;
   startCamera();
+};
+
+document.getElementById("resolution").onchange = e => {
+  state.resolution = e.target.value;
+  startCamera();
+};
+
+document.getElementById("zoom").oninput = e => {
+  state.zoom = e.target.value;
+  document.getElementById("zoomVal").textContent = state.zoom + "x";
+  updateZoom();
 };
 
 document.getElementById("conf").oninput = e => {
@@ -298,16 +327,11 @@ async function init() {
     runningMode: "VIDEO"
   });
 
-  try {
-    detectors.segment = await ImageSegmenter.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmentation/float16/latest/selfie_segmentation.tflite" },
-      runningMode: "VIDEO",
-      outputCategoryMask: true
-    });
-  } catch (e) {
-    console.warn("Segmentation model failed to load:", e);
-    state.segment = false;
-  }
+  detectors.segment = await ImageSegmenter.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmentation/float16/latest/selfie_segmentation.tflite" },
+    runningMode: "VIDEO",
+    outputCategoryMask: true
+  });
 
   startCamera();
 }
@@ -315,9 +339,15 @@ async function init() {
 async function startCamera() {
   if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: state.facingMode }
-  });
+  const constraints = {
+    video: {
+      facingMode: state.facingMode,
+      width: getResolutionWidth(),
+      height: getResolutionHeight()
+    }
+  };
+
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
   video.srcObject = stream;
 
   video.onloadedmetadata = () => {
@@ -325,11 +355,33 @@ async function startCamera() {
     canvas.height = video.videoHeight;
     running = true;
     status.textContent = "Tracking active";
+    updateZoom();
     requestAnimationFrame(loop);
   };
 }
 
-function loop(ts) {
+function getResolutionWidth() {
+  switch (state.resolution) {
+    case "low": return 640;
+    case "medium": return 1280;
+    case "high": return 1920;
+  }
+}
+
+function getResolutionHeight() {
+  switch (state.resolution) {
+    case "low": return 360;
+    case "medium": return 720;
+    case "high": return 1080;
+  }
+}
+
+function updateZoom() {
+  video.style.objectFit = "cover";
+  video.style.transform = `scale(${state.zoom})`;
+}
+
+async function loop(ts) {
   frames++;
   if (ts - last > 1000) {
     fpsEl.textContent = frames;
@@ -337,56 +389,81 @@ function loop(ts) {
     last = ts;
   }
 
+  const isMirrored = state.facingMode === "user";
+
+  ctx.save();
+  if (isMirrored) {
+    ctx.scale(-1, 1);
+    ctx.translate(-canvas.width, 0);
+  }
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
   const now = performance.now();
 
   let f = 0, o = 0, h = 0, p = 0;
 
   if (state.faceDetect) {
-    const r = detectors.faceDetect.detectForVideo(video, now);
+    const r = await detectors.faceDetect.detectForVideo(video, now);
     f = r.detections.length;
-    for (const d of r.detections)
-      ctx.strokeRect(d.boundingBox.originX, d.boundingBox.originY, d.boundingBox.width, d.boundingBox.height);
+    for (const d of r.detections) {
+      let x = d.boundingBox.originX;
+      let y = d.boundingBox.originY;
+      let w = d.boundingBox.width;
+      let h = d.boundingBox.height;
+      if (isMirrored) x = canvas.width - (x + w);
+
+      ctx.strokeRect(x, y, w, h);
+    }
   }
 
   if (state.faceMesh) {
-    const r = detectors.faceMesh.detectForVideo(video, now);
+    const r = await detectors.faceMesh.detectForVideo(video, now);
     r.faceLandmarks.forEach(l => {
-      draw.drawLandmarks(l, {color:"#ffcc00", radius:1.5});
-      draw.drawConnectors(l, FaceLandmarker.FACE_CONNECTIONS, {color:"#ffaa00"});
+      const mirroredL = l.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z }));
+      draw.drawLandmarks(mirroredL, {color:"#ffcc00", radius:1.5});
+      draw.drawConnectors(mirroredL, FaceLandmarker.FACE_CONNECTIONS, {color:"#ffaa00"});
     });
   }
 
   if (state.objDetect) {
-    const r = detectors.objDetect.detectForVideo(video, now);
+    const r = await detectors.objDetect.detectForVideo(video, now);
     o = r.detections.length;
     r.detections.forEach(d => {
+      let x = d.boundingBox.originX;
+      let y = d.boundingBox.originY;
+      let w = d.boundingBox.width;
+      let h = d.boundingBox.height;
+      if (isMirrored) x = canvas.width - (x + w);
+
       ctx.strokeStyle="#00ff9d";
       ctx.lineWidth=4;
-      ctx.strokeRect(d.boundingBox.originX, d.boundingBox.originY, d.boundingBox.width, d.boundingBox.height);
+      ctx.strokeRect(x, y, w, h);
     });
   }
 
   if (state.poseLand) {
-    const r = detectors.poseLand.detectForVideo(video, now);
+    const r = await detectors.poseLand.detectForVideo(video, now);
     p = r.landmarks.length;
     r.landmarks.forEach(l => {
-      draw.drawLandmarks(l, {color:"#ff3366"});
-      draw.drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, {color:"#33ff99"});
+      const mirroredL = l.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility }));
+      draw.drawLandmarks(mirroredL, {color:"#ff3366"});
+      draw.drawConnectors(mirroredL, PoseLandmarker.POSE_CONNECTIONS, {color:"#33ff99"});
     });
   }
 
   if (state.handLand) {
-    const r = detectors.handLand.detectForVideo(video, now);
+    const r = await detectors.handLand.detectForVideo(video, now);
     h = r.landmarks.length;
     r.landmarks.forEach(l => {
-      draw.drawLandmarks(l, {color:"#ffff66"});
-      draw.drawConnectors(l, HandLandmarker.HAND_CONNECTIONS, {color:"#00ffff"});
+      const mirroredL = l.map(p => ({ x: isMirrored ? 1 - p.x : p.x, y: p.y, z: p.z, visibility: p.visibility, presence: p.presence }));
+      draw.drawLandmarks(mirroredL, {color:"#ffff66"});
+      draw.drawConnectors(mirroredL, HandLandmarker.HAND_CONNECTIONS, {color:"#00ffff"});
     });
   }
 
-  if (state.segment && detectors.segment) {
-    const r = detectors.segment.segmentForVideo(video, now);
+  if (state.segment) {
+    const r = await detectors.segment.segmentForVideo(video, now);
     if (r.categoryMask) {
       ctx.globalAlpha = .35;
       ctx.drawImage(r.categoryMask.getAsCanvasImageSource(), 0, 0, canvas.width, canvas.height);
